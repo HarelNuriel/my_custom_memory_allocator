@@ -13,11 +13,11 @@ add_executable(my_custom_memory_allocator ${SOURCE_FILES})
 target_compile_options(my_custom_memory_allocator PRIVATE
         -fno-omit-frame-pointer
         -fsanitize=address
-        -O3
+        -O1
         )
 
 target_link_options(my_custom_memory_allocator PRIVATE
         -fno-omit-frame-pointer
         -fsanitize=address
-        -O3
+        -O1
         )
