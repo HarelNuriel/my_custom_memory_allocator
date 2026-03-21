@@ -59,13 +59,13 @@ struct metadata* find_first_free_node(const uint64_t size) {
     int is_fragmented = 1;
     uint64_t page = page_size;
 
-    while (!node->is_free || node->size < size + sizeof(struct metadata)) {
+    while (!node->is_free || node->size < size) {
         if (page == 0) {
             resize_mem();
             // Figure out how to deal with this case after implementing resize_mem
             continue;
         }
-        if (page == node->size + sizeof(struct metadata)) {
+        if (page <= node->size + sizeof(struct metadata)) {
             if (is_fragmented) {
                 defragmentation();
                 is_fragmented = 0;
@@ -73,11 +73,12 @@ struct metadata* find_first_free_node(const uint64_t size) {
                 resize_mem();
                 // Figure out how to deal with this case after implementing resize_mem
             }
+            page = page_size;
             node = first_node;
             continue;
         }
         if (node->next_node == NULL) {
-            struct metadata *next = (void*)node + node->size;
+            struct metadata *next = (void*)(node + 1) + node->size;
             next->is_free = 1;
             next->size = page_size - (page + sizeof(struct metadata));
         }
@@ -88,19 +89,23 @@ struct metadata* find_first_free_node(const uint64_t size) {
     return node;
 }
 
-void* my_malloc(const size_t size) {
+void* my_malloc(size_t size) {
+    if (size == 0) return NULL;
     if (!is_mem_init()) {
         if (!init_mem()) {
             return NULL;
         }
     }
 
+    size = size % 16 == 0 ? size : size + size % 16;
     struct metadata *mdata = find_first_free_node(size);
     __asan_unpoison_memory_region(mdata + 1, mdata->size);
 
     struct metadata *next_node = (void*)(mdata + 1) + size;
-    next_node->size = mdata->size - size - sizeof(struct metadata);
-    next_node->is_free = 1;
+    if (mdata->size > size + sizeof(struct metadata)) {
+        next_node->size = mdata->size - size - sizeof(struct metadata);
+        next_node->is_free = 1;
+    }
     mdata->is_free = 0;
     mdata->size = size;
     mdata->next_node = next_node;
