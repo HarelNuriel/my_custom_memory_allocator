@@ -5,19 +5,21 @@
 #ifndef MY_SECURE_FILE_TRANSFER_ALLOCATOR_H
 #define MY_SECURE_FILE_TRANSFER_ALLOCATOR_H
 
-#include <sys/mman.h>
-#include <sys/auxv.h>
 #include <sanitizer/asan_interface.h>
+#include <sys/auxv.h>
+#include <sys/mman.h>
 
-#define NULL (void*)0
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
 
-struct metadata{
+static struct metadata {
     unsigned long long size;
     char is_free;
     struct metadata *next_node;
-};
+}metadata;
 
-void* my_malloc(size_t size);
-void my_free(void* ptr);
+void *my_malloc(size_t size);
+void my_free(void *ptr);
 
-#endif //MY_SECURE_FILE_TRANSFER_ALLOCATOR_H
+#endif // MY_SECURE_FILE_TRANSFER_ALLOCATOR_H

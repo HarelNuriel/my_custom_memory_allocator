@@ -6,6 +6,7 @@ include(CTest)
 set(CMAKE_C_STANDARD 11)
 set(ENV{LSAN_OPTIONS} "verbosity=1:log_threads=1")
 set(ENV{ASAN_OPTIONS} "detect_leaks=0;abort_on_error=1")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(LIB_FILES allocator.c allocator.h)
 
@@ -25,9 +26,9 @@ target_link_options(allocator_lib PUBLIC
 file(GLOB test_files "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c")
 
 foreach(file IN LISTS test_files)
-        get_filename_component(test_name ${file} NAME_WE)
-        message(${file})
-        add_executable(${test_name} ${file})
-        target_link_libraries(${test_name} PUBLIC allocator_lib)
-        add_test(NAME ${test_name} COMMAND ${test_name})
+    get_filename_component(test_name ${file} NAME_WE)
+    message(${file})
+    add_executable(${test_name} ${file})
+    target_link_libraries(${test_name} PUBLIC allocator_lib)
+    add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
