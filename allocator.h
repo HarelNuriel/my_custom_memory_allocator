@@ -5,7 +5,10 @@
 #ifndef MY_SECURE_FILE_TRANSFER_ALLOCATOR_H
 #define MY_SECURE_FILE_TRANSFER_ALLOCATOR_H
 
+#define _GNU_SOURCE
+
 #include <sanitizer/asan_interface.h>
+#include <stdint.h> // IWYU pragma: export
 #include <sys/auxv.h>
 #include <sys/mman.h>
 
@@ -17,7 +20,12 @@ static struct metadata {
     unsigned long long size;
     char is_free;
     struct metadata *next_node;
-}metadata;
+} metadata;
+
+static struct list {
+    void *addr;
+    struct list *next_node;
+} list;
 
 void *my_malloc(size_t size);
 void my_free(void *ptr);
