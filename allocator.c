@@ -153,12 +153,13 @@ void *my_malloc(size_t size) {
 
 int is_free(void *ptr) {
     int i = 1;
-    struct list *temp = free_list;
-    while (temp->next_node != NULL) {
+    struct list *temp = free_list, *prev;
+    while (temp != NULL) {
         if (temp->addr == ptr) {
             return 1;
         }
         i++;
+        prev = temp;
         temp = temp->next_node;
     }
 
@@ -166,16 +167,16 @@ int is_free(void *ptr) {
         resize_mem(free_map, &f_page_size);
     }
 
-    struct list *next_free = temp + 1;
-    next_free->addr = ptr;
-    next_free->next_node = NULL;
-    temp->next_node = next_free;
+    temp = prev + 1;
+    temp->addr = ptr;
+    temp->next_node = NULL;
+    prev->next_node = temp;
 
     return 0;
 }
 
 void my_free(void *ptr) {
-    if (is_free(ptr) == 1) {
+    if (is_free(ptr)) {
         __builtin_trap();
     }
 
