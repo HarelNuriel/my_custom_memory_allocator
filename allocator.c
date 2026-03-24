@@ -120,6 +120,7 @@ void was_addr_freed(void *addr) {
             temp->addr = NULL;
             return;
         }
+        temp = temp->next_node;
     }
 }
 
@@ -174,9 +175,8 @@ int is_free(void *ptr) {
 }
 
 void my_free(void *ptr) {
-    if (is_free(ptr)) {
-        int *abrt = NULL;
-        *abrt = 10;
+    if (is_free(ptr) == 1) {
+        __builtin_trap();
     }
 
     struct metadata *mdata = (struct metadata *)ptr - 1;
