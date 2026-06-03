@@ -7,11 +7,11 @@
 
 static void *map;
 static void *free_map;
-static unsigned int page_size;
+static int page_size;
 static unsigned long long f_page_size;
 static unsigned long long m_page_size;
 static struct metadata *first_node;
-static struct list *free_list;
+static struct double_list *free_list;
 
 void release_map() __attribute__((destructor));
 void defragmentation() __attribute__((no_sanitize_address));
@@ -42,8 +42,9 @@ int init_mem() {
     first_node->next_node = NULL;
 
     free_list = free_map;
-    free_list->addr = NULL;
-    free_list->next_node = NULL;
+    free_list->address = NULL;
+    free_list->next = NULL;
+    free_list->prev = NULL;
 
     __asan_poison_memory_region(first_node + 1,
                                 m_page_size - sizeof(struct metadata));
@@ -65,14 +66,13 @@ void defragmentation() {
 }
 
 int resize_mem(void *map_ptr, unsigned long long *page_len) {
-    unsigned long long size = getauxval(AT_PAGESZ);
-    void *new_map = mremap(map_ptr, m_page_size, m_page_size + size, 0);
+    void *new_map = mremap(map_ptr, m_page_size, m_page_size + page_size, 0);
 
     if (new_map == MAP_FAILED) {
         return 0;
     }
 
-    (*page_len) += size;
+    (*page_len) += page_size;
     return 1;
 }
 
@@ -114,13 +114,13 @@ struct metadata *find_first_free_node(const unsigned long long size) {
 }
 
 void was_addr_freed(void *addr) {
-    struct list *temp = free_list;
+    struct double_list *temp = free_list;
     while (temp != NULL) {
-        if (temp->addr == addr) {
-            temp->addr = NULL;
+        if (temp->address == addr) {
+            temp->address = NULL;
             return;
         }
-        temp = temp->next_node;
+        temp = temp->next;
     }
 }
 
@@ -151,26 +151,40 @@ void *my_malloc(size_t size) {
     return mdata + 1;
 }
 
+void fill_free_fields(struct double_list *node, void *addr,
+                      struct double_list *prev) {
+    node->address = addr;
+    node->prev = prev;
+
+    struct metadata *mdata = (struct metadata *)addr - 1;
+    node->size = mdata->size;
+}
+
 int is_free(void *ptr) {
     int i = 1;
-    struct list *temp = free_list, *prev;
+    struct double_list *temp = free_list;
+
+    if (temp == NULL) {
+        fill_free_fields(temp, ptr, NULL);
+    }
+
     while (temp != NULL) {
-        if (temp->addr == ptr) {
+        if (temp->address == ptr) {
             return 1;
         }
-        i++;
-        prev = temp;
-        temp = temp->next_node;
+        if (temp->next == NULL) {
+            break;
+        }
+        temp = temp->next;
     }
 
-    if ((i + 1) * sizeof(list) >= f_page_size) {
-        resize_mem(free_map, &f_page_size);
+    if (temp == NULL) {
+        return 1;
     }
 
-    temp = prev + 1;
-    temp->addr = ptr;
-    temp->next_node = NULL;
-    prev->next_node = temp;
+    struct double_list *new = temp + 1;
+    fill_free_fields(new, ptr, temp);
+    temp->next = new;
 
     return 0;
 }

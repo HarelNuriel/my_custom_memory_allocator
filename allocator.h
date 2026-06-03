@@ -22,6 +22,13 @@ static struct metadata {
     struct metadata *next_node;
 } metadata;
 
+static struct double_list {
+    void *address;
+    unsigned long long size;
+    struct double_list *next;
+    struct double_list *prev;
+} double_list;
+
 static struct list {
     void *addr;
     struct list *next_node;
