@@ -7,6 +7,9 @@
 
 #define _GNU_SOURCE
 
+#include "arena.h"
+
+#include <elf.h>
 #include <sanitizer/asan_interface.h>
 #include <stdint.h> // IWYU pragma: export
 #include <sys/auxv.h>
@@ -16,23 +19,10 @@
 #define NULL ((void *)0)
 #endif
 
-static struct metadata {
-    unsigned long long size;
-    char is_free;
-    struct metadata *next_node;
-} metadata;
+#define get_size(ptr) ((ptr)->size & CHUNK_SIZE_MASK)
 
-static struct double_list {
-    void *address;
-    unsigned long long size;
-    struct double_list *next;
-    struct double_list *prev;
-} double_list;
-
-static struct list {
-    void *addr;
-    struct list *next_node;
-} list;
+#define MMAP(addr, size, prot, flags)                                          \
+    mmap((addr), (size), (prot), (flags) | MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)
 
 void *my_malloc(size_t size);
 void my_free(void *ptr);

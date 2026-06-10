@@ -9,7 +9,7 @@ set(ENV{ASAN_OPTIONS} "detect_leaks=0;abort_on_error=1")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(WRAPPER_SCRIPT ${CMAKE_SOURCE_DIR}/test_wrapper.sh)
-set(LIB_FILES allocator.c allocator.h)
+set(LIB_FILES arena.h allocator.c allocator.h)
 set(EXPECTED_TO_FAIL double_free)
 
 if(EXISTS "${WRAPPER_SCRIPT}" AND IS_EXECUTABLE "${WRAPPER_SCRIPT}")
