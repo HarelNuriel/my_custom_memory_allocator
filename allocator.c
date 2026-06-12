@@ -5,6 +5,8 @@
 
 #include "allocator.h"
 #include "arena.h"
+#include <stddef.h>
+#include <stdint.h>
 
 struct malloc_state marena;
 
@@ -45,30 +47,61 @@ void defragmentation() {}
 
 int resize_mem(void *map_ptr, unsigned long long *page_len) {}
 
-void was_addr_freed(void *addr) {}
+void *check_uns_bin(size_t size) { return NULL; }
+
+mchunkptr *check_free_list(size_t size) {
+    uint32_t idx = size / 16 >= 128 ? 0 : size / 16;
+    if (idx == 0)
+        return check_uns_bin(size);
+
+    mchunkptr *head = &marena.bins[idx];
+    if (head->fd == head)
+        return NULL;
+
+    __asan_unpoison_memory_region(head->fd, CHUNK_STRUCT_SIZE * 2);
+    __asan_unpoison_memory_region(head->fd->fd, CHUNK_STRUCT_SIZE * 2);
+    mchunkptr *ret = head->fd;
+    head->fd = head->fd->fd;
+    head->fd->bk = head;
+    if (head->fd != head)
+        __asan_poison_memory_region(head->fd, CHUNK_STRUCT_SIZE * 2);
+
+    __asan_unpoison_memory_region((void *)ret + get_size(ret),
+                                  CHUNK_STRUCT_SIZE);
+    __asan_unpoison_memory_region(ret, get_size(ret));
+    ((mchunkptr *)((void *)ret + get_size(ret)))->size |= PREV_INUSE;
+    __asan_poison_memory_region((void *)ret + get_size(ret), CHUNK_STRUCT_SIZE);
+    return ret;
+}
 
 void *my_malloc(size_t size) {
     if (marena.heap == NULL) {
         if (!init_arena(&marena))
             return NULL;
     }
+    if (size == 0)
+        return NULL;
 
     size = size + 15 & ~15;
     // TODO: First check free lists for matching chunk.
+    mchunkptr *mdata = check_free_list(size);
+    if (mdata != NULL) {
+        return mdata->user_data;
+    }
 
     // After chunk not found in free lists, get a chunk from the heap
     __asan_unpoison_memory_region(marena.top, marena.heap->size);
-    mchunkptr *uchunkptr = marena.top;
+    mdata = marena.top;
     marena.top = (void *)marena.top + (size + CHUNK_STRUCT_SIZE);
     marena.top->prev_size = size + CHUNK_STRUCT_SIZE;
     marena.heap->size -= (size + CHUNK_STRUCT_SIZE);
     marena.top->size = marena.heap->size | PREV_INUSE;
 
-    uchunkptr->size = (size + CHUNK_STRUCT_SIZE) | PREV_INUSE;
+    mdata->size = (size + CHUNK_STRUCT_SIZE) | PREV_INUSE;
 
-    __asan_poison_memory_region(uchunkptr, CHUNK_STRUCT_SIZE);
+    __asan_poison_memory_region(mdata, CHUNK_STRUCT_SIZE);
     __asan_poison_memory_region(marena.top, marena.heap->size);
-    return uchunkptr->user_data;
+    return mdata->user_data;
 }
 
 void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
