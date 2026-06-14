@@ -14,7 +14,7 @@ void release_arena() __attribute__((destructor));
 void defragmentation() __attribute__((no_sanitize_address));
 
 void release_arena() {
-    __asan_unpoison_memory_region(marena.heap, marena.heap->size);
+    unpoison(marena.heap, marena.heap->size);
     munmap(marena.heap, marena.heap->size);
 }
 
@@ -39,7 +39,7 @@ static int init_arena(mstate *arena) {
         arena->bins[i].bk = &arena->bins[i];
     }
 
-    __asan_poison_memory_region(chunk->user_data, HEAP_SIZE);
+    poison(chunk->user_data, HEAP_SIZE);
     return 1;
 }
 
@@ -58,19 +58,18 @@ mchunkptr *check_free_list(size_t size) {
     if (head->fd == head)
         return NULL;
 
-    __asan_unpoison_memory_region(head->fd, CHUNK_STRUCT_SIZE * 2);
-    __asan_unpoison_memory_region(head->fd->fd, CHUNK_STRUCT_SIZE * 2);
+    unpoison(head->fd, CHUNK_STRUCT_SIZE * 2);
+    unpoison(head->fd->fd, CHUNK_STRUCT_SIZE * 2);
     mchunkptr *ret = head->fd;
     head->fd = head->fd->fd;
     head->fd->bk = head;
     if (head->fd != head)
-        __asan_poison_memory_region(head->fd, CHUNK_STRUCT_SIZE * 2);
+        poison(head->fd, CHUNK_STRUCT_SIZE * 2);
 
-    __asan_unpoison_memory_region((void *)ret + get_size(ret),
-                                  CHUNK_STRUCT_SIZE);
-    __asan_unpoison_memory_region(ret, get_size(ret));
+    unpoison((void *)ret + get_size(ret), CHUNK_STRUCT_SIZE);
+    unpoison(ret, get_size(ret));
     ((mchunkptr *)((void *)ret + get_size(ret)))->size |= PREV_INUSE;
-    __asan_poison_memory_region((void *)ret + get_size(ret), CHUNK_STRUCT_SIZE);
+    poison((void *)ret + get_size(ret), CHUNK_STRUCT_SIZE);
     return ret;
 }
 
@@ -90,7 +89,7 @@ void *my_malloc(size_t size) {
     }
 
     // After chunk not found in free lists, get a chunk from the heap
-    __asan_unpoison_memory_region(marena.top, marena.heap->size);
+    unpoison(marena.top, marena.heap->size);
     mdata = marena.top;
     marena.top = (void *)marena.top + (size + CHUNK_STRUCT_SIZE);
     marena.top->prev_size = size + CHUNK_STRUCT_SIZE;
@@ -99,14 +98,14 @@ void *my_malloc(size_t size) {
 
     mdata->size = (size + CHUNK_STRUCT_SIZE) | PREV_INUSE;
 
-    __asan_poison_memory_region(mdata, CHUNK_STRUCT_SIZE);
-    __asan_poison_memory_region(marena.top, marena.heap->size);
+    poison(mdata, CHUNK_STRUCT_SIZE);
+    poison(marena.top, marena.heap->size);
     return mdata->user_data;
 }
 
 void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
     mchunkptr *last = list->bk;
-    __asan_unpoison_memory_region(&last->fd, CHUNK_STRUCT_SIZE * 2);
+    unpoison(&last->fd, CHUNK_STRUCT_SIZE * 2);
 
     list->bk = chunk;
     last->fd = chunk;
@@ -118,11 +117,10 @@ void my_free(void *ptr) {
     if (ptr == NULL)
         return;
 
-    __asan_unpoison_memory_region(ptr - CHUNK_STRUCT_SIZE, CHUNK_STRUCT_SIZE);
+    unpoison(ptr - CHUNK_STRUCT_SIZE, CHUNK_STRUCT_SIZE);
     mchunkptr *mdata = ptr - CHUNK_STRUCT_SIZE;
-    __asan_unpoison_memory_region(mdata, get_size(mdata));
-    __asan_unpoison_memory_region((void *)mdata + get_size(mdata),
-                                  CHUNK_STRUCT_SIZE);
+    unpoison(mdata, get_size(mdata));
+    unpoison((void *)mdata + get_size(mdata), CHUNK_STRUCT_SIZE);
     mchunkptr *next = (void *)mdata + get_size(mdata);
 
     if (!(next->size & PREV_INUSE)) {
@@ -134,10 +132,9 @@ void my_free(void *ptr) {
     int idx = ((mdata->size & CHUNK_SIZE_MASK) / 16) - 1;
     if (idx < 0 || idx >= 128)
         idx = 0;
-    __asan_unpoison_memory_region(mdata->user_data, CHUNK_STRUCT_SIZE);
+    unpoison(mdata->user_data, CHUNK_STRUCT_SIZE);
     insert_chunk(&marena.bins[idx], mdata);
 
-    __asan_poison_memory_region(next, CHUNK_STRUCT_SIZE);
-    __asan_poison_memory_region((void *)mdata + CHUNK_STRUCT_SIZE,
-                                mdata->size - CHUNK_STRUCT_SIZE);
+    poison(next, CHUNK_STRUCT_SIZE);
+    poison((void *)mdata + CHUNK_STRUCT_SIZE, mdata->size - CHUNK_STRUCT_SIZE);
 }

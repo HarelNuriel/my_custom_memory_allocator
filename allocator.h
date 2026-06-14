@@ -10,10 +10,20 @@
 #include "arena.h"
 
 #include <elf.h>
-#include <sanitizer/asan_interface.h>
 #include <stdint.h> // IWYU pragma: export
 #include <sys/auxv.h>
 #include <sys/mman.h>
+
+#ifdef __SANITIZE_ADDRESS__
+#include <sanitizer/asan_interface.h>
+
+#define poison(addr, size) __asan_poison_memory_region(addr, size)
+#define unpoison(addr, size) __asan_unpoison_memory_region(addr, size)
+
+#else
+#define __asan_poison_memory_region(addr, size) ((void)0)
+#define __asan_unpoison_memory_region(addr, size) ((void)0)
+#endif
 
 #ifndef NULL
 #define NULL ((void *)0)

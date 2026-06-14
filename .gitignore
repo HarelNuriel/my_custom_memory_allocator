@@ -55,7 +55,9 @@ dkms.conf
 *.dwo
 
 #cmake
-build/
+build*/
 out/
 CMakeFiles/
 .idea/
+*.md
+!README.md

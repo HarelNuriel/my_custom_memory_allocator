@@ -20,16 +20,22 @@ endif()
 
 add_library(allocator_lib ${LIB_FILES})
 
-target_compile_options(allocator_lib PUBLIC
-        -fno-omit-frame-pointer
-        -fsanitize=address
-        -g
-        )
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(allocator_lib PUBLIC
+            -fno-omit-frame-pointer
+            -fsanitize=address
+            -g
+            )
 
-target_link_options(allocator_lib PUBLIC
-        -fno-omit-frame-pointer
-        -fsanitize=address
-        )
+    target_link_options(allocator_lib PUBLIC
+            -fno-omit-frame-pointer
+            -fsanitize=address
+            )
+else()
+    target_compile_options(allocator_lib PUBLIC
+        -O3
+    )
+endif()
 
 file(GLOB test_files "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c")
 
@@ -38,7 +44,8 @@ foreach(file IN LISTS test_files)
     add_executable(${test_name} ${file})
     target_link_libraries(${test_name} PUBLIC allocator_lib)
     if(${test_name} IN_LIST EXPECTED_TO_FAIL)
-        add_test(NAME ${test_name} COMMAND sh -c "${WRAPPER_SCRIPT} $<TARGET_FILE:${test_name}>")
+        add_test(NAME ${test_name} COMMAND
+                sh -c "${WRAPPER_SCRIPT} $<TARGET_FILE:${test_name}>")
     else()
         add_test(NAME ${test_name} COMMAND ${test_name})
     endif()
