@@ -49,14 +49,19 @@ int resize_mem(void *map_ptr, unsigned long long *page_len) {}
 
 void *check_uns_bin(size_t size) { return NULL; }
 
-mchunkptr *check_free_list(size_t size) {
+/*
+ * check for chunks in the bins. dep on size, check fast then small/large then
+ * unsorted
+ */
+mchunkptr *check_bins(size_t size) {
+    // TODO: First should check fast bin.
     uint32_t idx = size / 16 >= 128 ? 0 : size / 16;
     if (idx == 0)
         return check_uns_bin(size);
 
     mchunkptr *head = &marena.bins[idx];
     if (head->fd == head)
-        return NULL;
+        return check_uns_bin(size);
 
     unpoison(head->fd, CHUNK_STRUCT_SIZE * 2);
     unpoison(head->fd->fd, CHUNK_STRUCT_SIZE * 2);
@@ -83,7 +88,7 @@ void *my_malloc(size_t size) {
 
     size = size + 15 & ~15;
     // TODO: First check free lists for matching chunk.
-    mchunkptr *mdata = check_free_list(size);
+    mchunkptr *mdata = check_bins(size);
     if (mdata != NULL) {
         return mdata->user_data;
     }
@@ -129,11 +134,9 @@ void my_free(void *ptr) {
 
     next->size -= PREV_INUSE;
 
-    int idx = ((mdata->size & CHUNK_SIZE_MASK) / 16) - 1;
-    if (idx < 0 || idx >= 128)
-        idx = 0;
+    // insert chunk into unsorted bin.
     unpoison(mdata->user_data, CHUNK_STRUCT_SIZE);
-    insert_chunk(&marena.bins[idx], mdata);
+    insert_chunk(&marena.bins[UNSORTED_BIN], mdata);
 
     poison(next, CHUNK_STRUCT_SIZE);
     poison((void *)mdata + CHUNK_STRUCT_SIZE, mdata->size - CHUNK_STRUCT_SIZE);

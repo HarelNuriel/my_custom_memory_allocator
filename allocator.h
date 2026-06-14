@@ -21,13 +21,15 @@
 #define unpoison(addr, size) __asan_unpoison_memory_region(addr, size)
 
 #else
-#define __asan_poison_memory_region(addr, size) ((void)0)
-#define __asan_unpoison_memory_region(addr, size) ((void)0)
+#define poison(addr, size) ((void)0)
+#define unpoison(addr, size) ((void)0)
 #endif
 
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+
+#define UNSORTED_BIN 0
 
 #define get_size(ptr) ((ptr)->size & CHUNK_SIZE_MASK)
 
