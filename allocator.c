@@ -47,7 +47,34 @@ void defragmentation() {}
 
 int resize_mem(void *map_ptr, unsigned long long *page_len) {}
 
-void *check_uns_bin(size_t size) { return NULL; }
+void insert_in_sbin(mchunkptr *chunk) {}
+
+void *check_uns_bin(size_t size) {
+    mchunkptr *uns_list = &marena.bins[UNSORTED_BIN];
+    unpoison(uns_list->fd, CHUNK_STRUCT_SIZE * 2);
+    mchunkptr *head = uns_list;
+
+    while (uns_list->size < size && uns_list != head) {
+        unpoison(uns_list->fd, CHUNK_STRUCT_SIZE * 2);
+        uns_list = uns_list->fd;
+        poison(uns_list->bk, CHUNK_STRUCT_SIZE * 2);
+    }
+    if (uns_list == head)
+        return NULL;
+
+    unpoison(uns_list, uns_list->size);
+    unpoison(uns_list->bk, CHUNK_STRUCT_SIZE * 2);
+    mchunkptr *carved = (void *)uns_list + uns_list->size;
+    carved->size = uns_list->size - size;
+    carved->prev_size = size + PREV_INUSE;
+    carved->bk = uns_list->bk;
+    carved->fd = uns_list->fd;
+    uns_list->bk->fd = carved;
+    poison(uns_list, CHUNK_STRUCT_SIZE * 2);
+    poison(carved, carved->size);
+
+    return NULL;
+}
 
 /*
  * check for chunks in the bins. dep on size, check fast then small/large then
@@ -122,6 +149,7 @@ void my_free(void *ptr) {
     if (ptr == NULL)
         return;
 
+    // TODO: merge adjacent chunks in unsorted list.
     unpoison(ptr - CHUNK_STRUCT_SIZE, CHUNK_STRUCT_SIZE);
     mchunkptr *mdata = ptr - CHUNK_STRUCT_SIZE;
     unpoison(mdata, get_size(mdata));
