@@ -168,7 +168,7 @@ void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
 
     list->bk = chunk;
     last->fd = chunk;
-    // chunk->fd = list;
+    chunk->fd = list;
     chunk->bk = last;
 }
 
