@@ -135,13 +135,40 @@ void *my_malloc(size_t size) {
     return mdata->user_data;
 }
 
+void merge_chunk(mchunkptr *chunk) {
+    mchunkptr *prev = (void *)chunk - chunk->prev_size;
+    mchunkptr *next = (void *)chunk + (chunk->size & CHUNK_SIZE_MASK);
+
+    unpoison(prev, chunk->prev_size);
+    unpoison(next, CHUNK_STRUCT_SIZE);
+    unpoison((void *)next + (next->size & CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
+
+    // Chunk next/prev chunks for PREV_INUSE flag and merge if 0
+    if (((mchunkptr *)((void *)next + (next->size & CHUNK_SIZE_MASK)))->size &
+        PREV_INUSE) {
+        next->size &= ~PREV_INUSE;
+    } else {
+        chunk->size += next->size;
+    }
+    poison((void *)next + (next->size * CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
+    poison(next, CHUNK_STRUCT_SIZE);
+    if (!(chunk->size & PREV_INUSE)) {
+        prev->size += (chunk->size & CHUNK_SIZE_MASK);
+        prev_chunk(chunk);
+    } else {
+        poison(prev, chunk->prev_size);
+    }
+    poison((void *)chunk + CHUNK_STRUCT_SIZE * 2, chunk->size);
+}
+
 void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
+    merge_chunk(chunk);
     mchunkptr *last = list->bk;
     unpoison(&last->fd, CHUNK_STRUCT_SIZE * 2);
 
     list->bk = chunk;
     last->fd = chunk;
-    chunk->fd = list;
+    // chunk->fd = list;
     chunk->bk = last;
 }
 
@@ -159,8 +186,6 @@ void my_free(void *ptr) {
     if (!(next->size & PREV_INUSE)) {
         __builtin_trap();
     }
-
-    next->size -= PREV_INUSE;
 
     // insert chunk into unsorted bin.
     unpoison(mdata->user_data, CHUNK_STRUCT_SIZE);
