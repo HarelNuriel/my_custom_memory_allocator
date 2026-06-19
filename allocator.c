@@ -29,7 +29,8 @@ static int init_arena(mstate *arena) {
     heap->ar = arena;
 
     mchunkptr *chunk = (void *)heap + sizeof(heap_info);
-    chunk->size = heap->size & CHUNK_SIZE_MASK;
+    chunk->size = (heap->size - sizeof(heap_info)) & CHUNK_SIZE_MASK;
+    chunk->prev_size = 0;
 
     arena->heap = heap;
     arena->top = chunk;
@@ -141,6 +142,7 @@ void merge_chunk(mchunkptr *chunk) {
 
     unpoison(prev, chunk->prev_size);
     unpoison(next, CHUNK_STRUCT_SIZE);
+    // FIX: merge with marena.top
     unpoison((void *)next + (next->size & CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
 
     // Chunk next/prev chunks for PREV_INUSE flag and merge if 0
@@ -150,15 +152,15 @@ void merge_chunk(mchunkptr *chunk) {
     } else {
         chunk->size += next->size;
     }
-    poison((void *)next + (next->size * CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
+    poison((void *)next + (next->size & CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
     poison(next, CHUNK_STRUCT_SIZE);
-    if (!(chunk->size & PREV_INUSE)) {
+    if (!(chunk->size & PREV_INUSE) && chunk->prev_size > 0) {
         prev->size += (chunk->size & CHUNK_SIZE_MASK);
         prev_chunk(chunk);
     } else {
         poison(prev, chunk->prev_size);
     }
-    poison((void *)chunk + CHUNK_STRUCT_SIZE * 2, chunk->size);
+    poison((void *)chunk + (CHUNK_STRUCT_SIZE * 2), chunk->size);
 }
 
 void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
