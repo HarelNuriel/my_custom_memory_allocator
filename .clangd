@@ -1,0 +1,4 @@
+CompileFlags:
+  CompilationDatabase: "build-asan"
+  Add:
+    - "-I/usr/lib/llvm-19/lib/clang/19/include"

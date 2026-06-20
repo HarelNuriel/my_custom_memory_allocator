@@ -9,11 +9,6 @@
 
 #include "arena.h"
 
-#include <elf.h>
-#include <stdint.h> // IWYU pragma: export
-#include <sys/auxv.h>
-#include <sys/mman.h>
-
 #ifdef __SANITIZE_ADDRESS__
 #include <sanitizer/asan_interface.h>
 

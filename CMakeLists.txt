@@ -13,7 +13,7 @@ set(LIB_FILES arena.h allocator.c allocator.h)
 set(EXPECTED_TO_FAIL double_free)
 
 if(EXISTS "${WRAPPER_SCRIPT}" AND IS_EXECUTABLE "${WRAPPER_SCRIPT}")
-    message(STATUS "${WRAPPER_SCRIPT} exists and executale.")
+    message(STATUS "${WRAPPER_SCRIPT} exists and executable.")
 else()
     message(FATAL_ERROR "Check That ${WRAPPER_SCRIPT} exists and executale.")
 endif()

@@ -1,12 +1,13 @@
 //
-// TODO(#1): Handle Double Free.
 // Created by Harel on 3/19/26.
 //
 
 #include "allocator.h"
 #include "arena.h"
-#include <stddef.h>
+#include <elf.h>
 #include <stdint.h>
+#include <sys/auxv.h>
+#include <sys/mman.h>
 
 struct malloc_state marena;
 
@@ -44,10 +45,6 @@ static int init_arena(mstate *arena) {
     return 1;
 }
 
-void defragmentation() {}
-
-int resize_mem(void *map_ptr, unsigned long long *page_len) {}
-
 void insert_in_sbin(mchunkptr *chunk) {}
 
 void *check_uns_bin(size_t size) {
@@ -60,8 +57,9 @@ void *check_uns_bin(size_t size) {
         uns_list = uns_list->fd;
         poison(uns_list->bk, CHUNK_STRUCT_SIZE * 2);
     }
-    if (uns_list == head)
+    if (uns_list == head) {
         return NULL;
+    }
 
     unpoison(uns_list, uns_list->size);
     unpoison(uns_list->bk, CHUNK_STRUCT_SIZE * 2);
@@ -143,23 +141,34 @@ void merge_chunk(mchunkptr *chunk) {
     unpoison(prev, chunk->prev_size);
     unpoison(next, CHUNK_STRUCT_SIZE);
     // FIX: merge with marena.top
-    unpoison((void *)next + (next->size & CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
-
-    // Chunk next/prev chunks for PREV_INUSE flag and merge if 0
-    if (((mchunkptr *)((void *)next + (next->size & CHUNK_SIZE_MASK)))->size &
-        PREV_INUSE) {
-        next->size &= ~PREV_INUSE;
-    } else {
-        chunk->size += next->size;
-    }
-    poison((void *)next + (next->size & CHUNK_SIZE_MASK), CHUNK_STRUCT_SIZE);
-    poison(next, CHUNK_STRUCT_SIZE);
+    // Check next/prev chunks for PREV_INUSE flag and merge if 0
     if (!(chunk->size & PREV_INUSE) && chunk->prev_size > 0) {
         prev->size += (chunk->size & CHUNK_SIZE_MASK);
         prev_chunk(chunk);
     } else {
         poison(prev, chunk->prev_size);
     }
+
+    // Check if next is top chunk and move top chunk if true
+    if ((void *)next == (void *)marena.top) {
+        mchunkptr *top = marena.top;
+        chunk->size += top->size & CHUNK_SIZE_MASK;
+        marena.top = chunk;
+    } else {
+        unpoison((void *)next + (next->size & CHUNK_SIZE_MASK),
+                 CHUNK_STRUCT_SIZE);
+        if (((mchunkptr *)((void *)next + (next->size & CHUNK_SIZE_MASK)))
+                ->size &
+            PREV_INUSE) {
+            next->size &= ~PREV_INUSE;
+        } else {
+            chunk->size += next->size;
+        }
+        poison((void *)next + (next->size & CHUNK_SIZE_MASK),
+               CHUNK_STRUCT_SIZE);
+    }
+    poison(next, CHUNK_STRUCT_SIZE);
+
     poison((void *)chunk + (CHUNK_STRUCT_SIZE * 2), chunk->size);
 }
 
