@@ -5,6 +5,7 @@
 #include "allocator.h"
 #include "arena.h"
 #include <elf.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <sys/auxv.h>
 #include <sys/mman.h>
@@ -41,7 +42,8 @@ static int init_arena(mstate *arena) {
         arena->bins[i].bk = &arena->bins[i];
     }
 
-    poison(chunk->user_data, HEAP_SIZE);
+    int to_poison = HEAP_SIZE - (sizeof(heap_info) + CHUNK_STRUCT_SIZE);
+    poison(chunk->user_data, to_poison);
     return 1;
 }
 
@@ -70,9 +72,8 @@ void *check_uns_bin(size_t size) {
     carved->fd = uns_list->fd;
     uns_list->bk->fd = carved;
     poison(uns_list, CHUNK_STRUCT_SIZE * 2);
-    poison(carved, carved->size);
 
-    return NULL;
+    return carved;
 }
 
 /*
@@ -81,14 +82,18 @@ void *check_uns_bin(size_t size) {
  */
 mchunkptr *check_bins(size_t size) {
     // TODO: First should check fast bin.
+
+    // NOTE:If not in small bin, check unsorted bin.
     uint32_t idx = size / 16 >= 128 ? 0 : size / 16;
     if (idx == 0)
         return check_uns_bin(size);
 
+    // NOTE:If small bin is empty, check unsorted bin.
     mchunkptr *head = &marena.bins[idx];
     if (head->fd == head)
         return check_uns_bin(size);
 
+    // NOTE:return the first chunk in bin and move head to the next.
     unpoison(head->fd, CHUNK_STRUCT_SIZE * 2);
     unpoison(head->fd->fd, CHUNK_STRUCT_SIZE * 2);
     mchunkptr *ret = head->fd;
@@ -113,13 +118,16 @@ void *my_malloc(size_t size) {
         return NULL;
 
     size = size + 15 & ~15;
-    // TODO: First check free lists for matching chunk.
     mchunkptr *mdata = check_bins(size);
     if (mdata != NULL) {
+        poison(mdata, CHUNK_STRUCT_SIZE);
         return mdata->user_data;
     }
 
-    // After chunk not found in free lists, get a chunk from the heap
+    if (size > marena.top->size)
+        return NULL;
+
+    // NOTE:After chunk not found in free lists, get a chunk from the heap
     unpoison(marena.top, marena.heap->size);
     mdata = marena.top;
     marena.top = (void *)marena.top + (size + CHUNK_STRUCT_SIZE);
@@ -127,6 +135,7 @@ void *my_malloc(size_t size) {
     marena.heap->size -= (size + CHUNK_STRUCT_SIZE);
     marena.top->size = marena.heap->size | PREV_INUSE;
 
+    // NOTE: every free merges, so top->prev always inuse.
     mdata->size = (size + CHUNK_STRUCT_SIZE) | PREV_INUSE;
 
     poison(mdata, CHUNK_STRUCT_SIZE);
@@ -134,46 +143,49 @@ void *my_malloc(size_t size) {
     return mdata->user_data;
 }
 
-void merge_chunk(mchunkptr *chunk) {
+mchunkptr *merge_chunk(mchunkptr *chunk) {
     mchunkptr *prev = (void *)chunk - chunk->prev_size;
     mchunkptr *next = (void *)chunk + (chunk->size & CHUNK_SIZE_MASK);
 
-    unpoison(prev, chunk->prev_size);
+    unpoison(prev, CHUNK_STRUCT_SIZE);
     unpoison(next, CHUNK_STRUCT_SIZE);
-    // FIX: merge with marena.top
-    // Check next/prev chunks for PREV_INUSE flag and merge if 0
+
+    // NOTE:Check next/prev chunks for PREV_INUSE flag and merge if 0
     if (!(chunk->size & PREV_INUSE) && chunk->prev_size > 0) {
         prev->size += (chunk->size & CHUNK_SIZE_MASK);
         prev_chunk(chunk);
     } else {
-        poison(prev, chunk->prev_size);
+        poison(prev, CHUNK_STRUCT_SIZE);
     }
 
-    // Check if next is top chunk and move top chunk if true
+    // NOTE:Check if next is top chunk and move top chunk if true
     if ((void *)next == (void *)marena.top) {
-        mchunkptr *top = marena.top;
-        chunk->size += top->size & CHUNK_SIZE_MASK;
+        chunk->size += marena.top->size & CHUNK_SIZE_MASK;
         marena.top = chunk;
     } else {
-        unpoison((void *)next + (next->size & CHUNK_SIZE_MASK),
-                 CHUNK_STRUCT_SIZE);
-        if (((mchunkptr *)((void *)next + (next->size & CHUNK_SIZE_MASK)))
-                ->size &
-            PREV_INUSE) {
+        // NOTE:Check if next is free, and merge if it is.
+        mchunkptr *n_next = (void *)next + (next->size & CHUNK_SIZE_MASK);
+        unpoison(n_next, CHUNK_STRUCT_SIZE);
+        if (n_next->size & PREV_INUSE) {
             next->size &= ~PREV_INUSE;
         } else {
             chunk->size += next->size;
         }
-        poison((void *)next + (next->size & CHUNK_SIZE_MASK),
-               CHUNK_STRUCT_SIZE);
+        poison(n_next, CHUNK_STRUCT_SIZE);
     }
     poison(next, CHUNK_STRUCT_SIZE);
 
     poison((void *)chunk + (CHUNK_STRUCT_SIZE * 2), chunk->size);
+
+    return chunk;
 }
 
 void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
-    merge_chunk(chunk);
+    mchunkptr *uchunk = merge_chunk(chunk);
+    if (marena.top == uchunk) {
+        return;
+    }
+
     mchunkptr *last = list->bk;
     unpoison(&last->fd, CHUNK_STRUCT_SIZE * 2);
 
@@ -186,6 +198,9 @@ void insert_chunk(mchunkptr *list, mchunkptr *chunk) {
 void my_free(void *ptr) {
     if (ptr == NULL)
         return;
+    if (ptr - CHUNK_STRUCT_SIZE == marena.top) {
+        __builtin_trap();
+    }
 
     // TODO: merge adjacent chunks in unsorted list.
     unpoison(ptr - CHUNK_STRUCT_SIZE, CHUNK_STRUCT_SIZE);
@@ -198,7 +213,7 @@ void my_free(void *ptr) {
         __builtin_trap();
     }
 
-    // insert chunk into unsorted bin.
+    // NOTE:insert chunk into unsorted bin.
     unpoison(mdata->user_data, CHUNK_STRUCT_SIZE);
     insert_chunk(&marena.bins[UNSORTED_BIN], mdata);
 
