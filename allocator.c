@@ -124,9 +124,6 @@ void *my_malloc(size_t size) {
         return mdata->user_data;
     }
 
-    if (size > marena.top->size)
-        return NULL;
-
     // NOTE:After chunk not found in free lists, get a chunk from the heap
     unpoison(marena.top, marena.heap->size);
     mdata = marena.top;
